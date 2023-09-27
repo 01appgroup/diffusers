@@ -55,6 +55,7 @@ from diffusers.training_utils import EMAModel
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
+from laion_dataset import load_laion_dataset
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.22.0.dev0")
@@ -172,6 +173,14 @@ def parse_args(input_args=None):
             "A folder containing the training data. Folder contents must follow the structure described in"
             " https://huggingface.co/docs/datasets/image_dataset#imagefolder. In particular, a `metadata.jsonl` file"
             " must exist to provide the captions for the images. Ignored if `dataset_name` is specified."
+        ),
+    )
+    parser.add_argument(
+        "--train_laion_data_dir",
+        type=str,
+        default=None,
+        help=(
+            "A folder containing the laion training data. Folder contents must contain tar files from img2dataset"
         ),
     )
     parser.add_argument(
@@ -465,7 +474,7 @@ def parse_args(input_args=None):
         args.local_rank = env_local_rank
 
     # Sanity checks
-    if args.dataset_name is None and args.train_data_dir is None:
+    if args.dataset_name is None and args.train_data_dir is None and args.train_laion_data_dir is None:
         raise ValueError("Need either a dataset name or a training folder.")
 
     if args.proportion_empty_prompts < 0 or args.proportion_empty_prompts > 1:
@@ -799,6 +808,8 @@ def main(args):
             args.dataset_config_name,
             cache_dir=args.cache_dir,
         )
+    # elif args.train_laion_data_dir is not None:
+    #     dataset = load_laion_dataset(args.train_laion_data_dir)
     else:
         data_files = {}
         if args.train_data_dir is not None:
