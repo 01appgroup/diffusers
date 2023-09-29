@@ -1,0 +1,22 @@
+FROM diffusers-pytorch-cuda:11.7.1-cudnn8-runtime-ubuntu20.04
+LABEL maintainer="01.ai"
+LABEL repository="sd-pretrain"
+
+WORKDIR /app
+
+#COPY requirements_sdxl.txt requirements.txt
+COPY . .
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir -r examples/text_to_image/requirements_sdxl.txt && \
+    python3 -m pip install --no-cache-dir -e ".[torch]" && \
+    python3 -m pip install --no-cache-dir wandb
+
+# COPY diffusers-xl/examples/text_to_image/train_text_to_image_sdxl.py .
+# COPY default_config.yaml .
+# COPY docker_entrypoint_train_text_to_image.sh entrypoint.sh
+
+# ENTRYPOINT [ "entrypoint.sh" ]
+
+
+

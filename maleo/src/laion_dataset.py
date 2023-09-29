@@ -172,6 +172,8 @@ if __name__ == "__main__":
     # path = "/ML-A100/data/multimodal_data/laion2B-en/laion2B-en/"
     path = "/ML-A100/data/multimodal_data/laion2B-en/laion2B-en/part-00048-5114fd87-297e-42b0-9d11-50f1df323dfa-c000.snappy.parquet.slice.3"
 
+    path = "/ML-A100/sshare-app/zhangsan/laion-high-resolution-output"
+
     # path = "/nfs/users/zhangsan/datasets/laion-high-resolution-output"
     ds = load_laion_dataset(path)
     ds['train'].shuffle(17)

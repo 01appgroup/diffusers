@@ -35,7 +35,7 @@ import transformers
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk, concatenate_datasets
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
 from torchvision import transforms
@@ -55,7 +55,8 @@ from diffusers.training_utils import EMAModel
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
-
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.22.0.dev0")
 
@@ -454,7 +455,8 @@ def parse_args(input_args=None):
         "--enable_xformers_memory_efficient_attention", action="store_true", help="Whether or not to use xformers."
     )
     parser.add_argument("--noise_offset", type=float, default=0, help="The scale of noise offset.")
-
+    parser.add_argument("--dataset_mod_number", type=int, default=64)
+    parser.add_argument("--proccess_mod_number", type=int, default=64)
     if input_args is not None:
         args = parser.parse_args(input_args)
     else:
@@ -720,15 +722,14 @@ def main(args):
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
         # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
         def save_model_hook(models, weights, output_dir):
-            if accelerator.is_main_process:
-                if args.use_ema:
-                    ema_unet.save_pretrained(os.path.join(output_dir, "unet_ema"))
+            if args.use_ema:
+                ema_unet.save_pretrained(os.path.join(output_dir, "unet_ema"))
 
-                for i, model in enumerate(models):
-                    model.save_pretrained(os.path.join(output_dir, "unet"))
+            for i, model in enumerate(models):
+                model.save_pretrained(os.path.join(output_dir, "unet"))
 
-                    # make sure to pop weight so that corresponding model is not saved again
-                    weights.pop()
+                # make sure to pop weight so that corresponding model is not saved again
+                weights.pop()
 
         def load_model_hook(models, input_dir):
             if args.use_ema:
@@ -799,15 +800,34 @@ def main(args):
             args.dataset_config_name,
             cache_dir=args.cache_dir,
         )
-    else:
-        data_files = {}
-        if args.train_data_dir is not None:
-            data_files["train"] = os.path.join(args.train_data_dir, "**")
-        dataset = load_dataset(
-            "imagefolder",
-            data_files=data_files,
-            cache_dir=args.cache_dir,
-        )
+    elif args.train_data_dir is not None:
+        traindatasets = []
+        rootpath = args.train_data_dir #"/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
+        processnumber = accelerator.process_index % args.proccess_mod_number
+
+        for root, dirs, files in os.walk(rootpath):
+            for dir in dirs:
+                datasetnumber = int(dir.split(".")[0][-3:]) % args.dataset_mod_number
+                datapath = os.path.join(root, dir)
+                if datasetnumber == processnumber:
+                    traindataset = load_from_disk(datapath)
+                    traindatasets.append(traindataset)
+                    print(f'process_index {accelerator.process_index} {datapath}')
+            break
+        print("!!! how many sub folders", len(traindatasets))
+        dataset_ = concatenate_datasets(traindatasets)
+        dataset = datasets.DatasetDict({"train": dataset_})
+
+        # data_files = {}
+        # if args.train_data_dir is not None:
+        #     data_files["train"] = traindatasets#os.path.join(args.train_data_dir, "**")
+        #     #print("!!!!!!!", data_files["train"])
+        # dataset = load_dataset(
+        #     "imagefolder",
+        #     streaming=True,
+        #     data_files=data_files,
+        #     cache_dir=args.cache_dir,
+        # )
         # See more about loading custom images at
         # https://huggingface.co/docs/datasets/v2.4.0/en/image_load#imagefolder
 
@@ -888,20 +908,26 @@ def main(args):
         caption_column=args.caption_column,
     )
     compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
-    with accelerator.main_process_first():
+    if True: #with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
-
+        print("CCCCCCCCCC")
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
         new_fingerprint_for_vae = Hasher.hash("vae")
-        train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
-        train_dataset = train_dataset.map(
-            compute_vae_encodings_fn,
-            batched=True,
-            batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
-            new_fingerprint=new_fingerprint_for_vae,
-        )
+        try:
+            train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
+            train_dataset = train_dataset.map(
+                compute_vae_encodings_fn,
+                batched=True,
+                batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
+                new_fingerprint=new_fingerprint_for_vae,
+            )
+        except Exception as ex:
+            print(f'process_index {accelerator.process_index} error {ex}')
+            raise
+
+        print("DDDDDDDDDD")
 
     del text_encoders, tokenizers, vae
     gc.collect()
