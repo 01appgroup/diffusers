@@ -176,6 +176,14 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
+        "--train_local_data_dir",
+        type=str,
+        default=None,
+        help=(
+            "A folder containing the training data witch save by datasets:save_to_disk"
+        ),
+    )
+    parser.add_argument(
         "--image_column", type=str, default="image", help="The column of the dataset containing an image."
     )
     parser.add_argument(
@@ -455,8 +463,6 @@ def parse_args(input_args=None):
         "--enable_xformers_memory_efficient_attention", action="store_true", help="Whether or not to use xformers."
     )
     parser.add_argument("--noise_offset", type=float, default=0, help="The scale of noise offset.")
-    parser.add_argument("--dataset_mod_number", type=int, default=64)
-    parser.add_argument("--proccess_mod_number", type=int, default=64)
     if input_args is not None:
         args = parser.parse_args(input_args)
     else:
@@ -467,7 +473,7 @@ def parse_args(input_args=None):
         args.local_rank = env_local_rank
 
     # Sanity checks
-    if args.dataset_name is None and args.train_data_dir is None:
+    if args.dataset_name is None and args.train_data_dir is None and args.train_local_data_dir is None:
         raise ValueError("Need either a dataset name or a training folder.")
 
     if args.proportion_empty_prompts < 0 or args.proportion_empty_prompts > 1:
@@ -793,6 +799,7 @@ def main(args):
 
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
+    sliced_data = False
     if args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         dataset = load_dataset(
@@ -800,16 +807,15 @@ def main(args):
             args.dataset_config_name,
             cache_dir=args.cache_dir,
         )
-    elif args.train_data_dir is not None:
+    elif args.train_local_data_dir is not None:
+        # process load it's own data only 
         traindatasets = []
-        rootpath = args.train_data_dir #"/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
-        processnumber = accelerator.process_index % args.proccess_mod_number
-
+        rootpath = args.train_local_data_dir #"/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
         for root, dirs, files in os.walk(rootpath):
             for dir in dirs:
-                datasetnumber = int(dir.split(".")[0][-3:]) % args.dataset_mod_number
+                datasetnumber = int(dir.split(".")[0][-3:]) % args.num_processes
                 datapath = os.path.join(root, dir)
-                if datasetnumber == processnumber:
+                if datasetnumber == accelerator.process_index:
                     traindataset = load_from_disk(datapath)
                     traindatasets.append(traindataset)
                     print(f'process_index {accelerator.process_index} {datapath}')
@@ -817,17 +823,16 @@ def main(args):
         print("!!! how many sub folders", len(traindatasets))
         dataset_ = concatenate_datasets(traindatasets)
         dataset = datasets.DatasetDict({"train": dataset_})
-
-        # data_files = {}
-        # if args.train_data_dir is not None:
-        #     data_files["train"] = traindatasets#os.path.join(args.train_data_dir, "**")
-        #     #print("!!!!!!!", data_files["train"])
-        # dataset = load_dataset(
-        #     "imagefolder",
-        #     streaming=True,
-        #     data_files=data_files,
-        #     cache_dir=args.cache_dir,
-        # )
+        sliced_data = False
+    elif args.train_data_dir is not None:
+        data_files = {}
+        if args.train_data_dir is not None:
+            data_files["train"] = os.path.join(args.train_data_dir, "**")
+        dataset = load_dataset(
+            "imagefolder",
+            data_files=data_files,
+            cache_dir=args.cache_dir,
+        )
         # See more about loading custom images at
         # https://huggingface.co/docs/datasets/v2.4.0/en/image_load#imagefolder
 
@@ -908,9 +913,9 @@ def main(args):
         caption_column=args.caption_column,
     )
     compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
-    if True: #with accelerator.main_process_first():
+    with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
-        print("CCCCCCCCCC")
+        logger.info(f"start embedding: {accelerator.process_index}")
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
@@ -924,10 +929,9 @@ def main(args):
                 new_fingerprint=new_fingerprint_for_vae,
             )
         except Exception as ex:
-            print(f'process_index {accelerator.process_index} error {ex}')
+            logger.error(f'embedding {accelerator.process_index} error {ex}')
             raise
-
-        print("DDDDDDDDDD")
+        logger.info(f"embedding finished: {accelerator.process_index}")
 
     del text_encoders, tokenizers, vae
     gc.collect()
