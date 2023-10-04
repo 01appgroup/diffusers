@@ -180,7 +180,15 @@ def parse_args(input_args=None):
         type=str,
         default=None,
         help=(
-            "A folder containing the training data witch save by datasets:save_to_disk"
+            "A folder containing the training data saved by datasets:save_to_disk from imageFolder."
+        ),
+    )
+    parser.add_argument(
+        "--train_tar_data_dir",    
+        type=str,
+        default=None,
+        help=(
+            "A folder containing the training data downloaded by img2dataset in tar-file format with jpg/png/txt."
         ),
     )
     parser.add_argument(
@@ -818,12 +826,22 @@ def main(args):
                 if datasetnumber == accelerator.process_index:
                     traindataset = load_from_disk(datapath)
                     traindatasets.append(traindataset)
-                    print(f'process_index {accelerator.process_index} {datapath}')
+                    logger.info(f'process_index {accelerator.process_index} {datapath}', main_process_only=False)
             break
-        print("!!! how many sub folders", len(traindatasets))
+        logger.info(f"[{accelerator.process_index}]: {len(traindatasets)} sub-folders loaded]", main_process_only=False)
         dataset_ = concatenate_datasets(traindatasets)
         dataset = datasets.DatasetDict({"train": dataset_})
-        sliced_data = False
+        sliced_data = True
+    elif args.train_tar_data_dir is not None:
+        # will be create later ...
+        # from maleo.src.laion_dataset import load_laion_dataset
+        # dataset = load_laion_dataset(args.train_tar_data_dir, 
+        #                              args.num_processes, 
+        #                              accelerator.process_index,
+        #                              preprocess_train,
+        #                              )
+        sliced_data = True
+        pass
     elif args.train_data_dir is not None:
         data_files = {}
         if args.train_data_dir is not None:
@@ -915,7 +933,7 @@ def main(args):
     compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
-        logger.info(f"start embedding: {accelerator.process_index}")
+        logger.info(f"start embedding: {accelerator.process_index}", main_process_only=False)
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
@@ -929,9 +947,9 @@ def main(args):
                 new_fingerprint=new_fingerprint_for_vae,
             )
         except Exception as ex:
-            logger.error(f'embedding {accelerator.process_index} error {ex}')
+            logger.error(f'embedding {accelerator.process_index} error {ex}', main_process_only=False)
             raise
-        logger.info(f"embedding finished: {accelerator.process_index}")
+        logger.info(f"embedding finished: {accelerator.process_index}", main_process_only=False)
 
     del text_encoders, tokenizers, vae
     gc.collect()
