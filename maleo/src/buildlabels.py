@@ -16,7 +16,7 @@ def list_jpg_files(folder_path):
 
 basepath = "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
 
-for i in range(49, 101):
+for i in range(101, 102):
     foderstring = pad_zeros(i, 3)
     destpath = basepath + "data-" + foderstring + "/"
     jpgfiles = list_jpg_files(destpath)

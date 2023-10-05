@@ -184,7 +184,7 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
-        "--train_tar_data_dir",    
+        "--train_tar_data_dir",
         type=str,
         default=None,
         help=(
@@ -817,9 +817,9 @@ def main(args):
             cache_dir=args.cache_dir,
         )
     elif args.train_local_data_dir is not None:
-        # process load it's own data only 
+        # process load it's own data only
         traindatasets = []
-        rootpath = args.train_local_data_dir #"/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
+        rootpath = args.train_local_data_dir  # "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
         for root, dirs, files in os.walk(rootpath):
             for dir in dirs:
                 datasetnumber = int(dir.split(".")[0][-3:]) % args.num_processes
@@ -836,8 +836,8 @@ def main(args):
     elif args.train_tar_data_dir is not None:
         # will be create later ...
         # from maleo.src.laion_dataset import load_laion_dataset
-        # dataset = load_laion_dataset(args.train_tar_data_dir, 
-        #                              args.num_processes, 
+        # dataset = load_laion_dataset(args.train_tar_data_dir,
+        #                              args.num_processes,
         #                              accelerator.process_index,
         #                              preprocess_train,
         #                              )
@@ -940,11 +940,15 @@ def main(args):
         new_fingerprint = Hasher.hash(args)
         new_fingerprint_for_vae = Hasher.hash("vae")
         try:
+            batch_size = args.train_batch_size * args.gradient_accumulation_steps
+            if not sliced_data:
+                batch_size = batch_size * accelerator.num_processes
+
             train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
             train_dataset = train_dataset.map(
                 compute_vae_encodings_fn,
                 batched=True,
-                batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
+                batch_size=batch_size,
                 new_fingerprint=new_fingerprint_for_vae,
             )
         except Exception as ex:
