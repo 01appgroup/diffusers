@@ -831,7 +831,7 @@ def main(args):
         for root, dirs, files in os.walk(rootpath):
             for n, dir in enumerate(sorted(dirs)):
                 datapath = os.path.join(root, dir)
-                if n % accelerator.num_processes == accelerator.process_index:
+                if True:  # n % accelerator.num_processes == accelerator.process_index:
                     traindataset = load_from_disk(datapath)
                     traindatasets.append(traindataset)
                     logger.info(f'process_index {accelerator.process_index} {datapath}', main_process_only=False)
@@ -842,7 +842,7 @@ def main(args):
         logger.info(f"[{accelerator.process_index}]: {len(traindatasets)} sub-folders loaded]", main_process_only=False)
         dataset_ = concatenate_datasets(traindatasets)
         dataset = datasets.DatasetDict({"train": dataset_})
-        sliced_data = True
+        # sliced_data = True
     elif args.train_tar_data_dir is not None:
         # will be create later ...
         # from maleo.src.laion_dataset import load_laion_dataset
@@ -954,7 +954,8 @@ def main(args):
             if not sliced_data:
                 batch_size = batch_size * accelerator.num_processes
 
-            train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
+            logger.info(f"do mapping with batch_size={batch_size}")
+            train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint, batch_size=batch_size)
             train_dataset = train_dataset.map(
                 compute_vae_encodings_fn,
                 batched=True,
