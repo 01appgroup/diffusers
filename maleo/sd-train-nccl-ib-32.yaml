@@ -40,7 +40,8 @@ spec:
                   "/pfs/sshare/app/sunyi/code/diffusers/examples/text_to_image/train_text_to_image_sdxl.py" \
                   --pretrained_model_name_or_path="/pfs/sshare/app/zhangsan/models/stable-diffusion-xl-base-1.0" \
                   --train_local_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile" \
-                  --caption_column=caption --report_to=wandb \
+                  --max_local_dir_num=1 \
+                  --caption_column=additional_feature --report_to=wandb \
                   --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=16 \
                   --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
                   --learning_rate=1e-05 --max_grad_norm=1 --lr_scheduler=constant \
@@ -104,11 +105,12 @@ spec:
                   "/pfs/sshare/app/sunyi/code/diffusers/examples/text_to_image/train_text_to_image_sdxl.py" \
                   --pretrained_model_name_or_path="/pfs/sshare/app/zhangsan/models/stable-diffusion-xl-base-1.0" \
                   --train_local_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile" \
-                  --caption_column=caption --report_to=wandb \
+                  --max_local_dir_num=1 \
+                  --caption_column=additional_feature --report_to=wandb \
                   --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=16 \
                   --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
                   --learning_rate=1e-05 --max_grad_norm=1 --lr_scheduler=constant \
-                  --lr_warmup_steps=0 --output_dir="/pfs/sshare/app/sunyi/code/diffusers/output/fengtang" \
+                  --lr_warmup_steps=0 --output_dir="/pfs/sshare/app/sunyi/code/diffusers/output/fengtang32" \
                   --resume_from_checkpoint="latest"
               env:
                 - name: NCCL_IB_DISABLE

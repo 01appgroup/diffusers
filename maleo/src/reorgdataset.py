@@ -57,6 +57,7 @@ def rebuild_data(srcpath, dstpath, max_count=10000, move_file=True):
     skipped = 0
 
     for dir, _, files in os.walk(srcpath):
+        logger.info(f"processing {dir} ...")
         for fn in sorted(files):
             if fn[-3:] not in ['jpg', 'png']:
                 continue

@@ -12,15 +12,15 @@ echo "MACHINE_RANK is ${MACHINE_RANK}"
 
 ##########
 # 火山上目录配置
-MODEL_DIR="/ML-A100/sshare-app/zhangsan/models/stable-diffusion-xl-base-1.0"
-TRAIN_DATA_DIR="datasets/fengtangCCG"
+# MODEL_DIR="/ML-A100/sshare-app/zhangsan/models/stable-diffusion-xl-base-1.0"
+# TRAIN_DATA_DIR="datasets/fengtangCCG"
 # TRAIN_TAR_DATA_DIR="/ML-A100/sshare-app/zhangsan/laion-high-resolution-output"     # not implemented
 
 ##########
 # 非云上目录配置
-# MODLE_DIR="/nfs/users/zhangsan/models/stable-diffusion-xl-base-1.0"
+MODLE_DIR="/nfs/users/zhangsan/models/stable-diffusion-xl-base-1.0"
 # TRAIN_DATA_DIR="datasets/fengtangCCG"
-# TRAIN_LOCAL_DATA_DIR="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile"
+TRAIN_LOCAL_DATA_DIR="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile"
 
 
 # 使用下面的行替换 --train_data_dir， 支持不同格式的目录数据

@@ -184,6 +184,14 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
+        "--max_local_dir_num",
+        type=int,
+        default=None,
+        help=(
+            "max local dir loaded per process when train_local_data_dir is set. None indicate all sub-dir used"
+        ),
+    )
+    parser.add_argument(
         "--train_tar_data_dir",
         type=str,
         default=None,
@@ -821,13 +829,15 @@ def main(args):
         traindatasets = []
         rootpath = args.train_local_data_dir  # "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
         for root, dirs, files in os.walk(rootpath):
-            for dir in dirs:
-                datasetnumber = int(dir.split(".")[0][-3:]) % args.num_processes
+            for n, dir in enumerate(sorted(dirs)):
                 datapath = os.path.join(root, dir)
-                if datasetnumber == accelerator.process_index:
+                if n % accelerator.num_processes == accelerator.process_index:
                     traindataset = load_from_disk(datapath)
                     traindatasets.append(traindataset)
                     logger.info(f'process_index {accelerator.process_index} {datapath}', main_process_only=False)
+                    # for test, load only max_local_dir_num sub-dir
+                    if args.max_local_dir_num is not None and len(traindatasets) >= args.max_local_dir_num:
+                        break
             break
         logger.info(f"[{accelerator.process_index}]: {len(traindatasets)} sub-folders loaded]", main_process_only=False)
         dataset_ = concatenate_datasets(traindatasets)
@@ -837,7 +847,7 @@ def main(args):
         # will be create later ...
         # from maleo.src.laion_dataset import load_laion_dataset
         # dataset = load_laion_dataset(args.train_tar_data_dir,
-        #                              args.num_processes,
+        #                              accelerator.num_processes,
         #                              accelerator.process_index,
         #                              preprocess_train,
         #                              )
