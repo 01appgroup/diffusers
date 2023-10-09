@@ -12,15 +12,18 @@ echo "MACHINE_RANK is ${MACHINE_RANK}"
 
 ##########
 # 火山上目录配置
-# MODEL_DIR="/ML-A100/sshare-app/zhangsan/models/stable-diffusion-xl-base-1.0"
+MODEL_DIR="/ML-A100/sshare-app/zhangsan/models/stable-diffusion-xl-base-1.0"
 # TRAIN_DATA_DIR="datasets/fengtangCCG"
-# TRAIN_TAR_DATA_DIR="/ML-A100/sshare-app/zhangsan/laion-high-resolution-output"     # not implemented
+TRAIN_DATA_DIR="/ML-A100/sshare-app/zhangsan/laion-high-resolution-output"
+TRAIN_DATA_TYPE="laiontarfiles"
+CACHE_DIR="/ML-A100/sshare-app/xujianbo/.cache"
 
 ##########
 # 非云上目录配置
-MODLE_DIR="/nfs/users/zhangsan/models/stable-diffusion-xl-base-1.0"
+# MODLE_DIR="/nfs/users/zhangsan/models/stable-diffusion-xl-base-1.0"
 # TRAIN_DATA_DIR="datasets/fengtangCCG"
-TRAIN_LOCAL_DATA_DIR="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile"
+# TRAIN_DATA_DIR="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile"
+# TRAIN_DATA_TYPE="locahf"
 
 
 # 使用下面的行替换 --train_data_dir， 支持不同格式的目录数据
@@ -29,17 +32,22 @@ TRAIN_LOCAL_DATA_DIR="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-data
 
 export NCCL_DEBUG="INFO"
 
-accelerate launch --config_file default_config.yaml --machine_rank=${MACHINE_RANK} \
-../examples/text_to_image/train_text_to_image_sdxl.py \
+cd ..
+
+accelerate launch --config_file maleo/default_config.yaml --machine_rank=${MACHINE_RANK} \
+examples/text_to_image/train_text_to_image_sdxl.py \
 --pretrained_model_name_or_path=${MODEL_DIR} \
 --train_data_dir=${TRAIN_DATA_DIR} \
---caption_column=additional_feature \
+--train_data_type=${TRAIN_DATA_TYPE} \
+--cache_dir=${CACHE_DIR} \
+--max_data_archive_num=10 \
+--caption_column=caption \
 --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=4 \
 --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
 --learning_rate=1e-05 --max_grad_norm=1 --lr_scheduler="constant" \
 --report_to=wandb \
 --lr_warmup_steps=0 \
---output_dir="../output/fangtang"
+--output_dir="output/fangtang"
 
 # --train_laion_data_dir="/ML-A100//laion2B-en/part-00048-5114fd87-297e-42b0-9d11-50f1df323dfa-c000.snappy.parquet.slice.3" \
 

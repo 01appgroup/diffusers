@@ -24,6 +24,7 @@ import logging
 import json
 import os
 import tarfile
+from PIL import Image
 
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ def build_index(members: list):
     return sample_index
 
 
-def generate_sample_from_tarfile(tarname: str, **kwargs):
+def generate_sample_from_tarfile(tarname: str, min_image_size: int = None, **kwargs):
     with tarfile.open(tarname, "r") as fp:
         members = fp.getmembers()
         index = build_index(members)
@@ -59,9 +60,14 @@ def generate_sample_from_tarfile(tarname: str, **kwargs):
             if len(v) != 3:
                 continue
             try:
-                image = fp.extractfile(members[v['jpg']]).read()
-                # meta = json.load(fp.extractfile(members[v['json']]))
-                # image = Image.open(fp.extractfile(members[v['jpg']]))
+                image = Image.open(fp.extractfile(members[v['jpg']]))
+                # skip small-image
+                if min_image_size:
+                    if image.width < min_image_size or image.height < min_image_size:
+                        continue
+
+                image.load()
+
                 text = fp.extractfile(members[v['txt']]).read().decode()
 
             except Exception as e:
@@ -71,10 +77,7 @@ def generate_sample_from_tarfile(tarname: str, **kwargs):
             yield k, {
                 # "caption": meta.get('caption', ''),
                 "caption": text,
-                "image": {
-                    "path": k + '.jpg',
-                    "bytes": image,
-                }
+                "image": image
             }
         fp.close()
 

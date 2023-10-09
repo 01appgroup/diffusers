@@ -1,13 +1,13 @@
 apiVersion: "kubeflow.org/v1"
 kind: "PyTorchJob"
 metadata:
-  name: "sd-train-nccl-ib-16-1w"
+  name: "sd-train-nccl-ib-16-10w"
   namespace: "kubeflow-app"
 spec:
   pytorchReplicaSpecs:
     Master:
       replicas: 1
-      restartPolicy: OnFailure
+      restartPolicy: Never
       template:
         metadata:
           annotations:
@@ -39,7 +39,9 @@ spec:
                   --gpu_ids=all \
                   "/pfs/sshare/app/sunyi/code/diffusers/examples/text_to_image/train_text_to_image_sdxl.py" \
                   --pretrained_model_name_or_path="/pfs/sshare/app/zhangsan/models/stable-diffusion-xl-base-1.0" \
-                  --train_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack2/data-000000" \
+                  --train_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-output" \
+                  --train_data_type="laiontarfiles" \
+                  --max_data_archive_num=10 \
                   --caption_column=caption --report_to=wandb \
                   --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=4 \
                   --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
@@ -51,6 +53,8 @@ spec:
                   value: "0"
                 - name: NCCL_DEBUG
                   value: "INFO"
+                - name: NCCL_IB_GID_INDEX
+                  value: "3"
                 - name: WANDB_API_KEY
                   # xujianbo-wandb
                   value: "2004630b97157ba54346d1f5e39fddd7b08d0b31"
@@ -71,7 +75,7 @@ spec:
               #   name: sugaku-volume
     Worker:
       replicas: 1
-      restartPolicy: OnFailure
+      restartPolicy: Never
       template:
         metadata:
           annotations:
@@ -103,7 +107,9 @@ spec:
                   --gpu_ids=all \
                   "/pfs/sshare/app/sunyi/code/diffusers/examples/text_to_image/train_text_to_image_sdxl.py" \
                   --pretrained_model_name_or_path="/pfs/sshare/app/zhangsan/models/stable-diffusion-xl-base-1.0" \
-                  --train_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack2/data-000000" \
+                  --train_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-output" \
+                  --train_data_type="laiontarfiles" \
+                  --max_data_archive_num=10 \
                   --caption_column=caption --report_to=wandb \
                   --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=4 \
                   --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
@@ -115,6 +121,8 @@ spec:
                   value: "0"
                 - name: NCCL_DEBUG
                   value: "INFO"
+                - name: NCCL_IB_GID_INDEX
+                  value: "3"
                 - name: WANDB_API_KEY
                   # xujianbo-wandb
                   value: "2004630b97157ba54346d1f5e39fddd7b08d0b31"

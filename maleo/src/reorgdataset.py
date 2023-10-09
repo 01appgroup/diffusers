@@ -41,7 +41,7 @@ def rebuild_data_0():
         print(i)
 
 
-def rebuild_data(srcpath, dstpath, max_count=10000, move_file=True):
+def rebuild_data_from_imagefolder(srcpath, dstpath, max_count=10000, move_file=True):
     #
     dstindex = 0
     curdst = os.path.join(dstpath, "data-{:0>6}".format(dstindex))
@@ -108,11 +108,71 @@ def rebuild_data(srcpath, dstpath, max_count=10000, move_file=True):
     logger.info(f"total processed: {count},  skipped: {skipped}")
 
 
+def convert_tarfile_to_imagefolder(tarname, dstpath):
+    with tarfile.open(tarname, "r") as fp:
+        members = fp.getmembers()
+
+        sample_index = {}
+        name_index = {}
+        for i, tarinfo in enumerate(members):
+            # .jpg/.json/.txt
+            name_index[tarinfo.name] = i
+            parts = tarinfo.name.split('.')
+            if len(parts) < 2:
+                continue
+            if parts[-1] not in {'jpg', 'json', 'txt'}:
+                continue
+            basename = '.'.join(parts[0:-1])
+            if basename not in sample_index:
+                sample_index[basename] = {parts[-1]: i}
+            else:
+                sample_index[basename][parts[-1]] = i
+
+        mfp = open(os.path.join(dstpath, "metadata.jsonl"), "w")
+
+        # 0: basename,  1: index of tarinfo for jpg,   2: index of tarinfo for json,   3: index of tarinfo for txtfile
+        count = 0
+        for k, v in sample_index.items():
+            if len(v) != 3:
+                continue
+
+            # save image to file
+            fp.extract(members[v['jpg']], dstpath, set_attrs=False)
+
+            meta = json.load(fp.extractfile(members[v['json']]))
+            meta['file_name'] = k + '.jpg'
+            json.dump(meta, mfp, ensure_ascii=False)
+            mfp.write("\n")
+            count += 1
+        mfp.close()
+
+        logger.info(f'total {count} files saved')
+
+
+def convert_laiondataset(srcpath: str, dstpath: str):
+    for fn in os.listdir(srcpath):
+        if not fn.endswith(".tar"):
+            continue
+
+        subdir = os.path.join(dstpath, fn[0:-4])
+
+        logger.info(f"write to {subdir}")
+        if not os.path.exists(subdir):
+            os.mkdir(subdir)
+        convert_tarfile_to_imagefolder(os.path.join(srcpath, fn), subdir)
+
+        break
+
+
 if __name__ == "__main__":
     format = "%(asctime)s %(levelname)s: %(message)s"
     logging.basicConfig(level=logging.INFO, format=format)
 
-    srcpath = "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
-    dstpath = "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack2/"
+    # srcpath = "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
+    # dstpath = "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack2/"
 
-    rebuild_data(srcpath, dstpath, max_count=10000, move_file=True)
+    # rebuild_data_from_imagefolder(srcpath, dstpath, max_count=10000, move_file=True)
+
+    # srcpath = "/ML-A100/sshare-app/zhangsan/laion-high-resolution-output"
+    # dstpath = "/ML-A100/sshare-app/xujianbo/laion-high-resolution/unpacked"
+    # convert_laiondataset(srcpath, dstpath)

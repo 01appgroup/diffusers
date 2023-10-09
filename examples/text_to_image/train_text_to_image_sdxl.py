@@ -16,6 +16,7 @@
 """Fine-tuning script for Stable Diffusion XL for text2image."""
 
 import argparse
+import datetime
 import functools
 import gc
 import logging
@@ -35,7 +36,7 @@ import transformers
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
-from datasets import load_dataset, load_from_disk, concatenate_datasets
+from datasets import load_dataset, load_from_disk, concatenate_datasets, Dataset
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
 from torchvision import transforms
@@ -176,27 +177,23 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
-        "--train_local_data_dir",
+        "--train_data_type",
         type=str,
-        default=None,
+        default="imageFolder",
+        choices=["imagefolder", "localhf", "laiontarfiles"],
         help=(
-            "A folder containing the training data saved by datasets:save_to_disk from imageFolder."
+            "Specify data type in `train_data_dir`, valid choice:"
+            "  imagefolder: train_data_dir is imageFolder."
+            "  localhf: train_data_dir is folder containing the training data saved by datasets:save_to_disk."
+            "  laiontarfiles: train_data_dir is folder containing laion dataset in tar-files"
         ),
     )
     parser.add_argument(
-        "--max_local_dir_num",
+        "--max_data_archive_num",
         type=int,
         default=None,
         help=(
-            "max local dir loaded per process when train_local_data_dir is set. None indicate all sub-dir used"
-        ),
-    )
-    parser.add_argument(
-        "--train_tar_data_dir",
-        type=str,
-        default=None,
-        help=(
-            "A folder containing the training data downloaded by img2dataset in tar-file format with jpg/png/txt."
+            "Max num of local dir loaded per process when `train_data_type` is localhf. or Max num of tar files when laiontarfiles"
         ),
     )
     parser.add_argument(
@@ -489,8 +486,13 @@ def parse_args(input_args=None):
         args.local_rank = env_local_rank
 
     # Sanity checks
-    if args.dataset_name is None and args.train_data_dir is None and args.train_local_data_dir is None:
+    if args.dataset_name is None and args.train_data_dir is None:
         raise ValueError("Need either a dataset name or a training folder.")
+
+    if args.dataset_name is None:
+        train_data_types = ('imagefolder', 'laiontarfiles', 'localhf')
+        if args.train_data_type not in train_data_types:
+            raise ValueError("train_data_type should be one of {}".format(','.join(train_data_types)))
 
     if args.proportion_empty_prompts < 0 or args.proportion_empty_prompts > 1:
         raise ValueError("`--proportion_empty_prompts` must be in the range [0, 1].")
@@ -593,16 +595,50 @@ def generate_timestep_weights(args, num_timesteps):
     return weights
 
 
+def load_data_onfly(args):
+    # load from generator for laointar files
+    from laion_dataset_generator import laion_dataset_generator
+    # using data_files instead of data_dir to enable num_proc
+    data_files = []
+    for dir, _, files in os.walk(args.train_data_dir):
+        data_files.extend([os.path.join(dir, fn) for fn in files if fn.endswith(".tar")])
+        if args.max_data_archive_num is not None and len(data_files) > args.max_data_archive_num:
+            data_files = data_files[0:args.max_data_archive_num]
+
+    # split to shards if there are two many tarfiles.
+    # (Each tarfile contain no more than 10k items for laion-dataset)
+    files_per_shard = 100
+    num_shard = (len(data_files) + files_per_shard - 1) // files_per_shard
+    dataset_list = []
+    for shard in range(0, num_shard):
+        files = data_files[shard * files_per_shard:(shard + 1) * files_per_shard]
+        gen_kwargs = {"data_files": files, "min_image_size": args.resolution}
+        dataset = Dataset.from_generator(
+            laion_dataset_generator,
+            gen_kwargs=gen_kwargs,
+            cache_dir=args.cache_dir,
+            num_proc=32,
+            config_name="laiontarfiles")
+        dataset_list.append(dataset)
+    if len(dataset_list) == 1:
+        dataset = dataset_list[0]
+    else:
+        dataset = datasets.concatenate_datasets(dataset_list)
+    return datasets.DatasetDict({"train": dataset})
+
+
 def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
 
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
 
+    kwargs = accelerate.utils.InitProcessGroupKwargs(timeout=datetime.timedelta(seconds=36000))
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
+        kwargs_handlers=[kwargs]
     )
 
     if args.report_to == "wandb":
@@ -816,54 +852,50 @@ def main(args):
 
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
-    sliced_data = False
-    if args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        dataset = load_dataset(
-            args.dataset_name,
-            args.dataset_config_name,
-            cache_dir=args.cache_dir,
-        )
-    elif args.train_local_data_dir is not None:
-        # process load it's own data only
-        traindatasets = []
-        rootpath = args.train_local_data_dir  # "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
-        for root, dirs, files in os.walk(rootpath):
-            for n, dir in enumerate(sorted(dirs)):
-                datapath = os.path.join(root, dir)
-                if True:  # n % accelerator.num_processes == accelerator.process_index:
-                    traindataset = load_from_disk(datapath)
-                    traindatasets.append(traindataset)
-                    logger.info(f'process_index {accelerator.process_index} {datapath}', main_process_only=False)
-                    # for test, load only max_local_dir_num sub-dir
-                    if args.max_local_dir_num is not None and len(traindatasets) >= args.max_local_dir_num:
-                        break
-            break
-        logger.info(f"[{accelerator.process_index}]: {len(traindatasets)} sub-folders loaded]", main_process_only=False)
-        dataset_ = concatenate_datasets(traindatasets)
-        dataset = datasets.DatasetDict({"train": dataset_})
-        # sliced_data = True
-    elif args.train_tar_data_dir is not None:
-        # will be create later ...
-        # from maleo.src.laion_dataset import load_laion_dataset
-        # dataset = load_laion_dataset(args.train_tar_data_dir,
-        #                              accelerator.num_processes,
-        #                              accelerator.process_index,
-        #                              preprocess_train,
-        #                              )
-        sliced_data = True
-        pass
-    elif args.train_data_dir is not None:
-        data_files = {}
-        if args.train_data_dir is not None:
-            data_files["train"] = os.path.join(args.train_data_dir, "**")
-        dataset = load_dataset(
-            "imagefolder",
-            data_files=data_files,
-            cache_dir=args.cache_dir,
-        )
-        # See more about loading custom images at
-        # https://huggingface.co/docs/datasets/v2.4.0/en/image_load#imagefolder
+
+    # for multi-node distributed training，load_dataset can't guarantees write to common-cache-dir(pfs).
+    with accelerator.main_process_first():
+        if args.dataset_name is not None:
+            # Downloading and loading a dataset from the hub.
+            dataset = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                cache_dir=args.cache_dir,
+            )
+        elif args.train_data_type == "localhf":
+            # process load it's own data only
+            traindatasets = []
+            rootpath = args.train_data_dir  # "/pfs/sshare/app/zhangsan/laion-high-resolution-unpack/"
+            for root, dirs, files in os.walk(rootpath):
+                for n, dir in enumerate(sorted(dirs)):
+                    datapath = os.path.join(root, dir)
+                    if True:  # n % accelerator.num_processes == accelerator.process_index:
+                        traindataset = load_from_disk(datapath)
+                        traindatasets.append(traindataset)
+                        logger.info(f'process_index {accelerator.process_index} {datapath}', main_process_only=False)
+                        # for test, load only max_local_dir_num sub-dir
+                        if args.max_data_archive_num is not None and len(traindatasets) >= args.max_data_archive_num:
+                            break
+                break
+            logger.info(f"[{accelerator.process_index}]: {len(traindatasets)} sub-folders loaded]", main_process_only=False)
+            dataset_ = concatenate_datasets(traindatasets)
+            dataset = datasets.DatasetDict({"train": dataset_})
+        elif args.train_data_type == "laiontarfiles":
+            # load from generator for laointar files
+            dataset = load_data_onfly(args)
+        elif args.train_data_type == "imagefolder":
+            data_files = {}
+            if args.train_data_dir is not None:
+                data_files["train"] = os.path.join(args.train_data_dir, "**")
+            dataset = load_dataset(
+                "imagefolder",
+                data_files=data_files,
+                cache_dir=args.cache_dir,
+            )
+            # See more about loading custom images at
+            # https://huggingface.co/docs/datasets/v2.4.0/en/image_load#imagefolder
+
+    logger.info(f"[{accelerator.process_index}]: dataset loaded", main_process_only=False)
 
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
@@ -944,18 +976,15 @@ def main(args):
     compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
-        logger.info(f"start embedding: {accelerator.process_index}", main_process_only=False)
+        batch_size = args.train_batch_size * args.gradient_accumulation_steps * accelerator.num_processes
+        logger.info(f"[{accelerator.process_index}] start embedding with batch_size={batch_size}", main_process_only=False)
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
         new_fingerprint_for_vae = Hasher.hash("vae")
         try:
-            batch_size = args.train_batch_size * args.gradient_accumulation_steps
-            if not sliced_data:
-                batch_size = batch_size * accelerator.num_processes
-
-            logger.info(f"do mapping with batch_size={batch_size}")
             train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint, batch_size=batch_size)
+            logger.info(f"[{accelerator.process_index}] start vae encoding")
             train_dataset = train_dataset.map(
                 compute_vae_encodings_fn,
                 batched=True,
@@ -965,7 +994,7 @@ def main(args):
         except Exception as ex:
             logger.error(f'embedding {accelerator.process_index} error {ex}', main_process_only=False)
             raise
-        logger.info(f"embedding finished: {accelerator.process_index}", main_process_only=False)
+        logger.info(f"[{accelerator.process_index}] embedding finished", main_process_only=False)
 
     del text_encoders, tokenizers, vae
     gc.collect()
@@ -994,6 +1023,8 @@ def main(args):
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
     )
+
+    accelerator.wait_for_everyone()
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False

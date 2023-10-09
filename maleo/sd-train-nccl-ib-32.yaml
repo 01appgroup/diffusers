@@ -7,7 +7,7 @@ spec:
   pytorchReplicaSpecs:
     Master:
       replicas: 1
-      restartPolicy: OnFailure
+      restartPolicy: Never
       template:
         metadata:
           annotations:
@@ -39,12 +39,14 @@ spec:
                   --gpu_ids=all \
                   "/pfs/sshare/app/sunyi/code/diffusers/examples/text_to_image/train_text_to_image_sdxl.py" \
                   --pretrained_model_name_or_path="/pfs/sshare/app/zhangsan/models/stable-diffusion-xl-base-1.0" \
-                  --train_local_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile" \
-                  --max_local_dir_num=1 \
-                  --caption_column=additional_feature --report_to=wandb \
-                  --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=16 \
-                  --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
-                  --learning_rate=1e-05 --max_grad_norm=1 --lr_scheduler=constant \
+                  --train_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-output" \
+                  --train_data_type="laiontarfiles" \
+                  --max_data_archive_num=100 \
+                  --cache_dir="/pfs/sshare/app/sunyi/sd-train-cache" \
+                  --caption_column=caption --report_to=wandb \
+                  --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=8 \
+                  --gradient_accumulation_steps=1 --gradient_checkpointing --max_train_steps=1500 \
+                  --learning_rate=3e-05 --max_grad_norm=1 --lr_scheduler=constant \
                   --lr_warmup_steps=0 --output_dir="/pfs/sshare/app/sunyi/code/diffusers/output/fengtang32" \
                   --resume_from_checkpoint="latest"
               env:
@@ -52,6 +54,8 @@ spec:
                   value: "0"
                 - name: NCCL_DEBUG
                   value: "INFO"
+                - name: NCCL_IB_GID_INDEX
+                  value: "3"
                 - name: WANDB_API_KEY
                   # xujianbo-wandb
                   value: "2004630b97157ba54346d1f5e39fddd7b08d0b31"
@@ -72,7 +76,7 @@ spec:
               #   name: sugaku-volume
     Worker:
       replicas: 3
-      restartPolicy: OnFailure
+      restartPolicy: Never
       template:
         metadata:
           annotations:
@@ -104,12 +108,14 @@ spec:
                   --gpu_ids=all \
                   "/pfs/sshare/app/sunyi/code/diffusers/examples/text_to_image/train_text_to_image_sdxl.py" \
                   --pretrained_model_name_or_path="/pfs/sshare/app/zhangsan/models/stable-diffusion-xl-base-1.0" \
-                  --train_local_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-unpack-datafile" \
-                  --max_local_dir_num=1 \
-                  --caption_column=additional_feature --report_to=wandb \
-                  --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=16 \
-                  --gradient_accumulation_steps=4 --gradient_checkpointing --max_train_steps=1500 \
-                  --learning_rate=1e-05 --max_grad_norm=1 --lr_scheduler=constant \
+                  --train_data_dir="/pfs/sshare/app/zhangsan/laion-high-resolution-output" \
+                  --train_data_type="laiontarfiles" \
+                  --max_data_archive_num=100 \
+                  --cache_dir="/pfs/sshare/app/sunyi/sd-train-cache" \
+                  --caption_column=caption --report_to=wandb \
+                  --use_ema --resolution=256 --center_crop --random_flip --train_batch_size=8 \
+                  --gradient_accumulation_steps=1 --gradient_checkpointing --max_train_steps=1500 \
+                  --learning_rate=3e-05 --max_grad_norm=1 --lr_scheduler=constant \
                   --lr_warmup_steps=0 --output_dir="/pfs/sshare/app/sunyi/code/diffusers/output/fengtang32" \
                   --resume_from_checkpoint="latest"
               env:
@@ -117,6 +123,8 @@ spec:
                   value: "0"
                 - name: NCCL_DEBUG
                   value: "INFO"
+                - name: NCCL_IB_GID_INDEX
+                  value: "3"
                 - name: WANDB_API_KEY
                   # xujianbo-wandb
                   value: "2004630b97157ba54346d1f5e39fddd7b08d0b31"
