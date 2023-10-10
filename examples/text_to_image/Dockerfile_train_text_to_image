@@ -4,6 +4,14 @@ LABEL repository="sd-pretrain"
 
 WORKDIR /app
 
+RUN echo "deb http://archive.ubuntu.com/ubuntu/ focal main restricted" >> /etc/apt/sources.list && \
+    apt update && \
+    apt -y install libibverbs1 \
+    ibverbs-utils \
+    libibverbs-dev \
+    make &&\
+    rm -rf /var/lib/apt/lists
+
 #COPY requirements_sdxl.txt requirements.txt
 COPY . .
 

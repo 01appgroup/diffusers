@@ -27,6 +27,7 @@ spec:
           containers:
             - name: pytorch
               image: ccr-276x7ilk-vpc.cnc.bj.baidubce.com/ai/sd-postrain:cuda11.7-wandb
+              imagePullPolicy: Always
               command: ["bash","-c"]
               args:
                 - |
