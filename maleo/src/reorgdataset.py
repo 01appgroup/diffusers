@@ -176,3 +176,7 @@ if __name__ == "__main__":
     # srcpath = "/ML-A100/sshare-app/zhangsan/laion-high-resolution-output"
     # dstpath = "/ML-A100/sshare-app/xujianbo/laion-high-resolution/unpacked"
     # convert_laiondataset(srcpath, dstpath)
+
+    srcpath = '/pfs/sshare/app/dataset/laion-high-aesthetics_6/000.tar'
+    dstpath = '/pfs/sshare/app/dataset/laion-high-aesthetics_unpacked_000'
+    convert_tarfile_to_imagefolder(srcpath, dstpath)
