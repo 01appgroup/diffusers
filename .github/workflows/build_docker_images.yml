@@ -3,7 +3,7 @@ name: Build Docker images (nightly)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" # every day at midnight
+    - cron: "0 0 * 1 12" # every day at midnight
 
 concurrency:
   group: docker-image-builds
